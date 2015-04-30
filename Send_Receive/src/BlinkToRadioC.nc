@@ -21,6 +21,7 @@ implementation {
 	nx_uint16_t prevS;
 	nx_uint16_t prevAS;
 	uint16_t counter = 0;
+	message_t remember;
 	message_t sendMsgBuf;
 	message_t * sendMsg = &sendMsgBuf; // initially points to sendMsgBuf   
 
@@ -68,27 +69,29 @@ implementation {
 			btrpkt->counter = counter;
 
 			// send message and store returned pointer to free buffer for next message
+			remember = *sendMsg;
 			sendMsg = call AMSendReceiveI.send(sendMsg);
 			ack = FALSE;
 
 		}
 		else {
-			call Timer1.startOneShotAt(call Timer1.getNow(), 10);
+			if (! call Timer1.isRunning()){
+				call Timer1.startOneShotAt(call Timer1.getNow(), TIME_OUT_TIME);
+			}	
 		}
 	}
 
 	event message_t * AMSendReceiveI.receive(message_t * msg) {
 		uint8_t len = call Packet.payloadLength(msg);
-		BlinkToRadioMsg * btrpkt = (BlinkToRadioMsg * )(call Packet.getPayload(msg,
-				len));
-		call Leds.set(btrpkt->counter);
+		BlinkToRadioMsg * btrpkt = (BlinkToRadioMsg * )(call Packet.getPayload(msg,len));
 
-		if(btrpkt->type == TYPE_ACK) {
+		if(btrpkt->type == TYPE_ACK && btrpkt ->counter == counter) {
 			ack = TRUE;
 			call Timer1.stop();
 		}
 
 		if(btrpkt->type == TYPE_DATA) {
+			call Leds.set(btrpkt->counter);
 			call AMPacket.setType(sendMsg, AM_BLINKTORADIO);
 			call AMPacket.setDestination(sendMsg, 2);
 			call AMPacket.setSource(sendMsg, TOS_NODE_ID);
@@ -111,7 +114,6 @@ implementation {
 				prevAS = 1;
 			}
 
-			// send message and store returned pointer to free buffer for next message
 			call AMSendReceiveI.send(sendMsg);
 		}
 
@@ -119,8 +121,7 @@ implementation {
 	}
 
 	event void Timer1.fired() {		
-		
-		sendMsg = call AMSendReceiveI.send(&sendMsgBuf);
+		call AMSendReceiveI.send(&remember);
 		ack = FALSE;
 		
 		call Leds.led1Toggle();
